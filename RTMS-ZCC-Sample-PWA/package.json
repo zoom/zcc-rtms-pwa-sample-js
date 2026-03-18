@@ -1,0 +1,44 @@
+{
+  "name": "rtms-zcc-zoom-app",
+  "version": "1.0.0",
+  "description": "Minimal working ZCC RTMS Zoom App - Start/Stop RTMS with OAuth",
+  "private": true,
+  "scripts": {
+    "start": "docker-compose up",
+    "stop": "docker-compose down",
+    "restart": "docker-compose restart",
+    "logs": "docker-compose logs -f",
+    "logs:backend": "docker-compose logs -f backend",
+    "logs:frontend": "docker-compose logs -f frontend",
+    "logs:rtms": "docker-compose logs -f rtms",
+    "build": "docker-compose build",
+    "rebuild": "docker-compose down -v && docker-compose build && docker-compose up",
+    "clean": "docker-compose down -v",
+    "clean:all": "docker-compose down -v && docker system prune -f",
+    "clean:audio": "rm -rf rtms/data/audio/*",
+    "health": "curl http://localhost:3001/health",
+    "ngrok": "ngrok http 3001"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/rtms-zcc-zoom-app.git"
+  },
+  "keywords": [
+    "zoom",
+    "zoom-apps",
+    "rtms",
+    "real-time-media-streams",
+    "transcripts",
+    "zoom-contact-center",
+    "zcc"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "connect-redis": "^9.0.0"
+  }
+}
