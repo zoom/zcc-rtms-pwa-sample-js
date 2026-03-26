@@ -55,7 +55,7 @@ async function handleRtmsControl(req, res) {
 
   try {
     // Use the specific Zoom Contact Center API endpoint
-    const zoomApiUrl = `https://goocicci.zoom.us/v2/contact_center/${engagementId}/rtms_app/status`;
+    const zoomApiUrl = `https://zoom.us/v2/contact_center/${engagementId}/rtms_app/status`;
 
     console.log(`${action.toUpperCase()} RTMS for engagement: ${engagementId}`);
     console.log('Zoom API URL:', zoomApiUrl);
