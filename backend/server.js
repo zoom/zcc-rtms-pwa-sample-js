@@ -23,7 +23,7 @@ const server = http.createServer(app);
 app.set('trust proxy', 1);
 
 const PORT = process.env.BACKEND_PORT || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'; // Dev default — set FRONTEND_URL in .env for production
 const FRONTEND_INTERNAL_URL = process.env.FRONTEND_INTERNAL_URL || FRONTEND_URL;
 
 // Middleware - IMPORTANT: Order matters!
@@ -79,11 +79,11 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to false for ngrok testing (ngrok terminates SSL)
+    secure: process.env.NODE_ENV === 'production', // Set NODE_ENV=production when deploying with HTTPS/ngrok
     httpOnly: true,
-    sameSite: 'lax', // Allow cross-site requests for ngrok
+    sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    path: '/' // Ensure cookie is sent for all paths
+    path: '/'
   }
 }));
 
@@ -173,18 +173,31 @@ app.get('/api/auth/callback', async (req, res) => {
     redirectUrl.searchParams.set('auth', 'success');
     res.redirect(redirectUrl.toString());
   } catch (error) {
-    console.error('OAuth callback error - Full error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-      stack: error.stack
-    });
+    console.error('OAuth callback error:', error.response?.status, error.message);
     const redirectUrl = new URL(process.env.FRONTEND_URL || 'http://localhost:3000');
     redirectUrl.searchParams.set('auth', 'error');
-    redirectUrl.searchParams.set('error_message', encodeURIComponent(error.message));
     res.redirect(redirectUrl.toString());
   }
 });
+
+// Forward webhook to RTMS server with exponential backoff retry
+async function forwardWithRetry(url, body, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await axios.post(url, body, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 5000
+      });
+      return;
+    } catch (error) {
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
 
 // Store recent webhook event signatures to prevent duplicates
 const recentWebhooks = new Map();
@@ -329,16 +342,16 @@ app.post('/api/webhooks/zoom', async (req, res) => {
       recentWebhooks.delete(webhookSignature);
     }, WEBHOOK_DEDUP_WINDOW_MS);
 
-    try {
-      const rtmsServerUrl = process.env.RTMS_SERVER_URL || 'http://localhost:8080';
-      console.log(`Forwarding ${event} to RTMS server at ${rtmsServerUrl}`);
-      await axios.post(rtmsServerUrl, req.body, {
-        headers: { 'Content-Type': 'application/json' }
-      });
-      console.log(`Successfully forwarded ${event} to RTMS server`);
-    } catch (error) {
-      console.error(`Failed to forward ${event} to RTMS server:`, error.message);
-    }
+    // Respond immediately — Zoom requires 200 within 3 seconds
+    res.status(200).json({ received: true });
+
+    // Forward to RTMS server asynchronously with retry (fire-and-forget)
+    const rtmsServerUrl = process.env.RTMS_SERVER_URL || 'http://localhost:8080'; // Dev default
+    forwardWithRetry(rtmsServerUrl, req.body)
+      .then(() => console.log(`Forwarded ${event} to RTMS server`))
+      .catch((error) => console.error(`Failed to forward ${event} after retries:`, error.message));
+
+    return; // Prevent double-send below
   }
 
   res.status(200).json({ received: true });
@@ -384,7 +397,7 @@ app.all('/api/zoom/*', async (req, res) => {
 
     res.status(error.response?.status || 500).json({
       error: 'Zoom API request failed',
-      details: error.response?.data || error.message
+      code: error.response?.data?.code
     });
   }
 });

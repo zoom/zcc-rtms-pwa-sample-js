@@ -4,10 +4,11 @@
 
 function securityHeaders(req, res, next) {
   // OWASP Security Headers (required by Zoom Apps)
-  // Note: Only apply HSTS in production with HTTPS
-  
+  // Only set HSTS when the request arrived over HTTPS (direct or via proxy like ngrok)
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  
+  }
+
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');

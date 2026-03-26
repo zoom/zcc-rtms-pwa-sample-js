@@ -97,7 +97,7 @@ async function handleRtmsControl(req, res) {
 
     res.status(error.response?.status || 500).json({
       error: `Failed to ${action} RTMS`,
-      details: error.response?.data || error.message
+      code: error.response?.data?.code
     });
   }
 }
