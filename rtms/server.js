@@ -38,17 +38,32 @@ function saveTranscript(engagementId, data) {
 // Send status update to backend for UI display
 async function sendStatusUpdate(message, type = 'info') {
   try {
-    await axios.post(`${BACKEND_URL}/api/rtms/status`, {
-      message,
-      type
-    });
+    await axios.post(`${BACKEND_URL}/api/rtms/status`, { message, type });
   } catch (error) {
     // Silently fail if backend is not available
   }
 }
 
+// Push a transcript line to the backend
+async function sendTranscriptLine(engagementId, text) {
+  try {
+    await axios.post(`${BACKEND_URL}/api/rtms/transcript`, { engagementId, text });
+  } catch (error) {
+    // Silently fail
+  }
+}
+
+// Forward a raw audio chunk (base64) to the backend for SSE broadcast
+function sendAudioChunk(b64data) {
+  axios.post(`${BACKEND_URL}/api/rtms/audio`, { data: b64data }, { timeout: 1000 })
+    .catch(() => {});
+}
+
 // Store active engagements
 const activeEngagements = new Map();
+
+// Rolling 30-second transcript buffer per engagement
+const transcriptBuffer = new Map(); // engagementId -> [{text, ts}]
 
 // Generate signature: HMAC-SHA256(client_id + "," + engagement_id + "," + rtms_stream_id, secret)
 function generateSignature(engagementId, rtmsStreamId) {
@@ -77,6 +92,7 @@ function connectToSignalingWebSocket(engagementId, rtmsStreamId, serverUrl, enga
     };
 
     ws.send(JSON.stringify(handshake));
+    console.log(handshake.signature)
   });
 
   ws.on('message', (data) => {
@@ -94,27 +110,23 @@ function connectToSignalingWebSocket(engagementId, rtmsStreamId, serverUrl, enga
         console.error(`[${engagementId}] Signaling handshake failed:`, message.reason);
       }
     } else if (message.msg_type === 6) {
+      console.log(message)
       // Event notification — pre-register channel with participantMode
-      const channelId = message.channel_id;
-      const participantMode = message.participant_mode;
       const eventType = message.event?.event_type;
 
       if (eventType === 10) {
-        console.log(`[${engagementId}] Participant joined — channel ${channelId} (${participantMode})`);
-      } else if (eventType === 9) {
-        console.log(`[${engagementId}] Participant left — channel ${channelId}`);
-      } else if (eventType === 18) {
-        console.log(`[${engagementId}] Transfer initiated`);
+        console.log(`[${engagementId}] Agent — channel ${message.event.participant_info.channel_id} `);
+      } else if (eventType === 8) {
+        console.log(`[${engagementId}] Consumer — channel`);
       }
-
-      if (channelId !== undefined && participantMode !== undefined) {
-        if (!engagementData.channelPaths.has(channelId)) {
-          const rawPath = getChannelRawPath(engagementData.sessionDir, channelId);
-          const wavPath = getChannelWavPath(engagementData.sessionDir, channelId);
-          engagementData.channelPaths.set(channelId, { rawPath, wavPath, chunkCount: 0, participantMode });
-          console.log(`[${engagementId}] Channel ${channelId} registered as ${participantMode}`);
-        }
-      }
+      // if (channelId !== undefined && participantMode !== undefined) {
+      //   if (!engagementData.channelPaths.has(channelId)) {
+      //     const rawPath = getChannelRawPath(engagementData.sessionDir, channelId);
+      //     const wavPath = getChannelWavPath(engagementData.sessionDir, channelId);
+      //     engagementData.channelPaths.set(channelId, { rawPath, wavPath, chunkCount: 0, participantMode });
+      //     console.log(`[${engagementId}] Channel ${channelId} registered as ${participantMode}`);
+      //   }
+      // }
       console.log(message);
     } else if (message.msg_type === 12) {
       // Keep-alive request
@@ -194,8 +206,22 @@ function connectToMediaWebSocket(mediaUrl, engagementId, rtmsStreamId, signaling
       // Keep-alive request
       ws.send(JSON.stringify({ msg_type: 13, timestamp: message.timestamp }));
     } else if (message.msg_type === 17) {
-      console.log(`[${engagementId}] Transcript:`, message.content.data);
+      console.log(`[${engagementId}] Transcript:`, message);
       saveTranscript(engagementId, message.content.data);
+
+      // Push to rolling buffer, keep last 30 seconds, and forward to backend
+      const text = typeof message.content.data === 'string'
+        ? message.content.data
+        : message.content.data?.text || '';
+      if (text) {
+        if (!transcriptBuffer.has(engagementId)) transcriptBuffer.set(engagementId, []);
+        const buf = transcriptBuffer.get(engagementId);
+        const now = Date.now();
+        buf.push({ text, ts: now });
+        const cutoff = now - 30000;
+        while (buf.length > 0 && buf[0].ts < cutoff) buf.shift();
+        sendTranscriptLine(engagementId, text);
+      }
     } else if (message.msg_type === 14 || message.msg_type === 15) {
       // Audio data — save per channel
       const audioBuffer = Buffer.from(message.content.data, 'base64');
@@ -210,6 +236,15 @@ function connectToMediaWebSocket(mediaUrl, engagementId, rtmsStreamId, signaling
 
       const channel = engagementData.channelPaths.get(channelId);
       saveRawAudio(audioBuffer, channel.rawPath);
+
+      // Lock onto the first channel seen and stream only that one
+      if (engagementData.streamChannelId === null) {
+        engagementData.streamChannelId = channelId;
+        console.log(`[${engagementId}] Streaming channel ${channelId} (${channel.participantMode}) to browser`);
+      }
+      if (channelId === engagementData.streamChannelId) {
+        sendAudioChunk(message.content.data);
+      }
       channel.chunkCount++;
       engagementData.audioChunkCount++;
 
@@ -260,6 +295,7 @@ function handleRTMSStarted(payload) {
     sessionDir,
     channelPaths: new Map(), // channelId -> { rawPath, wavPath }
     audioChunkCount: 0,
+    streamChannelId: null, // first channel seen — streamed to browser
     startedAt: new Date(),
     signalingWs: null,
     mediaWs: null
@@ -329,6 +365,7 @@ async function cleanupEngagement(engagementId) {
     console.error(`[${engagementId}] Cleanup error:`, error.message);
   } finally {
     activeEngagements.delete(engagementId);
+    transcriptBuffer.delete(engagementId);
     console.log(`[${engagementId}] Cleaned up`);
   }
 }
@@ -353,6 +390,14 @@ app.post('/', (req, res) => {
     console.log(`[Webhook] Unknown event: ${event}`);
     res.status(200).json({ received: true });
   }
+});
+
+// Return transcript from the last 10 seconds for a given engagement
+app.get('/transcript/recent/:engagementId', (req, res) => {
+  const buf = transcriptBuffer.get(req.params.engagementId) || [];
+  const cutoff = Date.now() - 10000;
+  const recent = buf.filter(e => e.ts >= cutoff).map(e => e.text).join(' ');
+  res.json({ transcript: recent });
 });
 
 // Health check endpoint

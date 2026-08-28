@@ -4,20 +4,15 @@
   "description": "Minimal working ZCC RTMS Zoom App - Start/Stop RTMS with OAuth",
   "private": true,
   "scripts": {
-    "start": "docker-compose up",
-    "stop": "docker-compose down",
-    "restart": "docker-compose restart",
-    "logs": "docker-compose logs -f",
-    "logs:backend": "docker-compose logs -f backend",
-    "logs:frontend": "docker-compose logs -f frontend",
-    "logs:rtms": "docker-compose logs -f rtms",
-    "build": "docker-compose build",
-    "rebuild": "docker-compose down -v && docker-compose build && docker-compose up",
-    "clean": "docker-compose down -v",
-    "clean:all": "docker-compose down -v && docker system prune -f",
-    "clean:audio": "rm -rf rtms/data/audio/*",
+    "start": "concurrently --kill-others-on-fail \"npm --prefix backend run dev\" \"npm --prefix rtms run dev\" \"npm --prefix frontend start\"",
+    "stop": "kill -9 $(lsof -ti:3000,:3001,:8080) 2>/dev/null || true",
+    "install:all": "npm --prefix backend install && npm --prefix rtms install && npm --prefix frontend install",
     "health": "curl http://localhost:3001/health",
-    "ngrok": "ngrok http 3001"
+    "ngrok": "ngrok http 3001",
+    "clean:data": "rm -rf rtms/data/audio/* && rm -rf rtms/data/transcripts/*"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
   },
   "repository": {
     "type": "git",
@@ -37,8 +32,5 @@
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
-  },
-  "dependencies": {
-    "connect-redis": "^9.0.0"
   }
 }

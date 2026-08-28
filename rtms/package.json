@@ -1,7 +1,7 @@
 {
   "name": "rtms-server",
   "version": "1.0.0",
-  "description": "RTMS server for capturing audio and transcripts from Zoom meetings",
+  "description": "RTMS server for capturing audio and transcripts from Zoom Contact Center Engagements",
   "main": "server.js",
   "type": "module",
   "scripts": {
