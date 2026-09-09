@@ -310,7 +310,6 @@ function bucketEvent(event) {
     eventCounts.bmw++;
   }
 }
-//TOAST EVENT REASONS NOT WORKING!!!!!!!!!!!!!!!!!
 // Add a status message
 function addStatusMessage(message, type = 'info') {
   const statusMessage = {
