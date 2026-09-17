@@ -382,7 +382,7 @@ npm stop        # Kills processes on ports 3000, 3001, and 8080
 | `npm run install:all` | Install dependencies for all three services |
 | `npm run health` | Check backend health endpoint |
 | `npm run ngrok` | Start ngrok tunnel on port 3001 |
-| `npm run clean:audio` | Delete all captured audio files in `rtms/data/audio/` |
+| `npm run clean:data` | Delete all captured audio files in `rtms/data/` |
 
 ### Frontend Source Structure
 

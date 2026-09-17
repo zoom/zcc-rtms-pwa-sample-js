@@ -1,3 +1,0 @@
-[2026-05-01T00:32:09.466Z] "Hello?"
-[2026-05-01T00:32:11.667Z] "Hello? Hello, hello, hello, hello."
-[2026-05-01T00:32:13.520Z] "Oh, okay, okay."
