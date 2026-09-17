@@ -1,3 +1,4 @@
+// Starts and stops RTMS for an engagement while streaming and scheduling the received live audio in the browser.
 import { useState, useRef } from 'react';
 
 export function useRtms(engagementId) {

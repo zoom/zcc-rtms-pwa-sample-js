@@ -1,3 +1,4 @@
+// Polls hold state and calculates a locally ticking total hold duration while the engagement remains on hold.
 import { useState, useEffect } from 'react';
 
 export function useHoldData() {

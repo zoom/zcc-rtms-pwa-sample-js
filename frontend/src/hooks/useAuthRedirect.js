@@ -1,3 +1,4 @@
+// Reads the OAuth result from the URL, exposes a user-facing status message, and removes the result parameter after handling it.
 import { useState, useEffect } from 'react';
 
 export function useAuthRedirect() {

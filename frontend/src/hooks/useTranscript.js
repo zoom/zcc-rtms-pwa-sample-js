@@ -1,3 +1,4 @@
+// Polls the active engagement transcript and keeps its display container scrolled to the newest line.
 import { useState, useEffect, useRef } from 'react';
 
 export function useTranscript() {

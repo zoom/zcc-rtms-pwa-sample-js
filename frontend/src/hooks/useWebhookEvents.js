@@ -1,3 +1,4 @@
+// Polls recent backend webhook status messages and provides a local action to clear the displayed list.
 import { useState, useEffect } from 'react';
 
 export function useWebhookEvents() {

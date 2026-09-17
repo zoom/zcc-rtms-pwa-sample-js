@@ -1,3 +1,4 @@
+// Keeps the active engagement ID and status current by polling the backend and, when available, reading the Zoom Apps SDK context.
 import { useState, useEffect } from 'react';
 import zoomSdk from '@zoom/appssdk';
 

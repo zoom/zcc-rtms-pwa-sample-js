@@ -2,12 +2,12 @@
 
 ## Overview
 
-This application captures live audio and transcripts from Zoom Contact Center voice engagements via RTMS (Real-Time Media Streams). Agents manually start and stop capture from a browser-based PWA. When a call ends, the app generates an engagement snapshot with AI-powered coaching notes, hold reason analysis, and a full event timeline.
+This application captures live audio and transcripts from Zoom Contact Center voice engagements via RTMS (Real-Time Media Streams). Agents manually start and stop capture from a browser-based PWA, providing remote access to monitor engagement activity in real-time.
 
 The app runs as three coordinated Node.js processes:
 
-- **Frontend** (`port 3000`): React PWA — real-time dashboard with RTMS controls, live audio playback, live transcript, and a post-call engagement snapshot
-- **Backend** (`port 3001`): Express API server — handles OAuth 2.0, Zoom webhooks, event tracking, AI hold reason generation via OpenRouter, and live audio/transcript relay
+- **Frontend** (`port 3000`): React PWA — real-time dashboard with RTMS controls, live audio playback, and live transcript
+- **Backend** (`port 3001`): Express API server — handles OAuth 2.0, Zoom webhooks, event tracking, and live audio/transcript relay
 - **RTMS Server** (`port 8080`): Real-time media stream processor — maintains WebSocket connections to Zoom media servers, captures audio per channel, generates WAV files, and forwards live audio and transcript data to the backend
 
 ---
@@ -18,10 +18,8 @@ The app runs as three coordinated Node.js processes:
 - **Real-time audio playback** — live audio streamed from RTMS server to browser via Server-Sent Events and played back through the Web Audio API (~200ms delay)
 - **Live audio visualizer** — animated equalizer bars and waveform that activate when audio is streaming
 - **Real-time transcript** — live scrolling transcript display, updated every 2 seconds from the backend
-- **AI hold reason generation** — when an agent places a consumer on hold, the app captures the last 10 seconds of transcript and sends it to OpenRouter (Claude 3 Haiku) to generate a one-sentence explanation of why the agent held
-- **Engagement Snapshot page** — a post-call summary page with call statistics, AI-generated narrative summary, coaching notes, and a timestamped event timeline; always accessible with mock data as a placeholder
-- **Event tracking** — transfer, conference, and BMW (Barge/Monitor/Whisper) counters tracked in real time
-- **Hold tracking** — live hold time display (ticks every second while on hold) and hold count
+- **Event tracking** — transfer, conference, and BMW (Barge/Monitor/Whisper) counters tracked in real time on the dashboard
+- **Hold tracking** — live hold time display (ticks every second while on hold) and hold count shown on the dashboard
 - **Per-channel WAV output** — audio saved as 16kHz 16-bit mono WAV per participant channel
 - **Interleaved stereo WAV** — per-channel files merged into a single stereo `mixed.wav` on call end
 - **Transcript files** — raw transcript JSON saved per engagement in `rtms/data/transcripts/`
@@ -39,7 +37,6 @@ The app runs as three coordinated Node.js processes:
 - ngrok account (for exposing your local backend to Zoom webhooks)
 - Zoom Contact Center account with admin access
 - RTMS license provisioned to your Contact Center account
-- OpenRouter API key (for AI hold reason generation — the app falls back gracefully if not set)
 
 ---
 
@@ -123,12 +120,12 @@ Under **Access → Event Subscriptions**:
 | Event | Purpose |
 |-------|---------|
 | `contact_center.engagement_started` | **Required** — activates the Start/Stop buttons in the PWA |
-| `contact_center.engagement_ended` | **Required** — triggers engagement snapshot generation |
-| `contact_center.engagement_user_hold` | Triggers AI hold reason generation |
+| `contact_center.engagement_ended` | **Required** — resets engagement state and counters |
+| `contact_center.engagement_user_hold` | Updates hold tracking counters |
 | `contact_center.engagement_user_unhold` | Updates live hold timer |
 | `contact_center.voice_rtms_started` | Triggers RTMS WebSocket connection |
 | `contact_center.voice_rtms_stopped` | Triggers WAV conversion and cleanup |
-| `contact_center.engagement_transfer_initiated` | Tracked in event counts and snapshot |
+| `contact_center.engagement_transfer_initiated` | Tracked in event counts on dashboard |
 
 ### 3. Add Scopes
 
@@ -200,13 +197,6 @@ Once your app is installed, configure it in your Contact Center:
 | `FRONTEND_URL` | Frontend URL for CORS and OAuth redirects | `http://localhost:3000` |
 | `RTMS_SERVER_URL` | Internal URL the backend uses to reach the RTMS server | `http://localhost:8080` |
 | `BACKEND_URL` | Internal URL the RTMS server uses to reach the backend | `http://localhost:3001` |
-
-### AI Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OPENROUTER_API_KEY` | OpenRouter API key for hold reason generation | *(optional — falls back to a static reason)* |
-| `AI_MODEL` | OpenRouter model ID | `anthropic/claude-3-haiku` |
 
 ### Port Configuration
 
@@ -305,14 +295,7 @@ Zoom fires: contact_center.engagement_user_hold
          ↓
 Backend increments hold count, starts hold timer
          ↓
-Backend fetches last 10s of transcript from RTMS server
-         ↓
-If transcript available → sends to OpenRouter (Claude 3 Haiku):
-  "In one concise sentence, why did the agent likely put the customer on hold?"
-         ↓
-AI response (or static fallback) stored in eventLog with elapsed time
-         ↓
-Event appears in the Engagement Snapshot timeline after the call ends
+Frontend displays live hold timer on dashboard
 ```
 
 ### 6. Engagement Ends
@@ -322,11 +305,7 @@ Call ends in Zoom Contact Center
          ↓
 Zoom fires: contact_center.engagement_ended
          ↓
-Backend snapshots all engagement data (duration, hold time, transfers, event log)
-         ↓
-Generates Engagement Snapshot: stats, AI narrative summary, coaching notes
-         ↓
-Frontend polls /api/engagement/summary → detects new summary → navigates to /snapshot
+Backend resets all engagement counters and state
          ↓
 Zoom fires: contact_center.voice_rtms_stopped
          ↓
@@ -409,10 +388,9 @@ npm stop        # Kills processes on ports 3000, 3001, and 8080
 
 ```
 frontend/src/
-  App.js              — router + summary state (≈20 lines)
+  App.js              — router (≈20 lines)
   pages/
-    DashboardPage.js  — live dashboard: controls, audio, transcript
-    SnapshotPage.js   — post-call snapshot display
+    DashboardPage.js  — live dashboard: controls, audio, transcript, metrics
   hooks/
     useEngagement.js  — active engagement polling + Zoom SDK init
     useEventCounts.js — transfer/conference/BMW counters
@@ -420,12 +398,9 @@ frontend/src/
     useRtms.js        — RTMS start/stop + audio SSE + Web Audio API
     useTranscript.js  — transcript polling + auto-scroll
     useWebhookEvents.js — status message polling
-    useSummary.js     — summary polling + navigate to /snapshot
     useAuthRedirect.js — OAuth redirect URL param handling
   utils/
     format.js         — formatHoldTime utility
-  data/
-    mockData.js       — MOCK_SUMMARY placeholder for /snapshot
 ```
 
 ### Hot Reload
@@ -452,8 +427,6 @@ All three services run with `nodemon` (backend and RTMS server) and the Create R
 | `/api/engagement/counts` | GET | Transfer, conference, and BMW event counts |
 | `/api/engagement/hold` | GET | Hold count, total hold time, and current hold state |
 | `/api/engagement/transcript` | GET | All transcript lines for the current engagement |
-| `/api/engagement/summary` | GET | Post-call engagement snapshot (null if none yet) |
-| `/api/engagement/summary/test` | POST | Seed a demo summary (for testing the snapshot page) |
 | `/api/rtms/status` | POST | RTMS server posts status messages here |
 | `/api/rtms/transcript` | POST | RTMS server posts transcript lines here |
 | `/api/rtms/audio` | POST | RTMS server posts base64 audio chunks here |
@@ -468,7 +441,7 @@ All three services run with `nodemon` (backend and RTMS server) and the Create R
 |----------|--------|-------------|
 | `/` | POST | RTMS webhook handler (`voice_rtms_started` / `voice_rtms_stopped`) |
 | `/health` | GET | Health check with active engagement IDs |
-| `/transcript/recent/:engagementId` | GET | Last 10 seconds of transcript for an engagement (used by backend for AI hold reason) |
+| `/transcript/recent/:engagementId` | GET | Last 10 seconds of transcript for an engagement |
 
 ---
 
@@ -499,13 +472,3 @@ All three services run with `nodemon` (backend and RTMS server) and the Create R
 - Check RTMS server logs for `[engagement_id] Transcript:` — if not present, Zoom is not sending transcript data
 - Confirm your Zoom account has transcription enabled for Contact Center
 - Hit `http://localhost:3001/api/engagement/transcript` directly to check if lines are arriving
-
-**AI hold reasons are showing the fallback text?**
-- Confirm `OPENROUTER_API_KEY` is set in `.env`
-- Check backend logs for `[Hold reason] Failed:` when a hold event fires
-- If no transcript was captured in the 10 seconds before the hold, the AI prompt will be empty and the fallback is used intentionally
-
-**Snapshot page shows mock data after a real call?**
-- The snapshot generates when `contact_center.engagement_ended` fires — confirm this event is subscribed in Zoom Marketplace
-- After a call ends, poll `curl http://localhost:3001/api/engagement/summary` to see if data was generated
-- The frontend navigates to `/snapshot` automatically within 3 seconds of detecting a new summary

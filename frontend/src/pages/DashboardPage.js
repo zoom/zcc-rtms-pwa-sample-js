@@ -35,7 +35,7 @@ export default function DashboardPage() {
       <div className="container">
         <div className="header">
           <div>
-            <h1>Engagement Analytics</h1>
+            <h1>Remote Engagement View</h1>
             <p className="subtitle">Real-Time Media Stream Controls</p>
           </div>
           <div className="status-panel">

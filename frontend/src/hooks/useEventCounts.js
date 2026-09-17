@@ -1,3 +1,4 @@
+// Polls the backend for the active engagement's transfer, conference, and BMW event counters.
 import { useState, useEffect } from 'react';
 
 export function useEventCounts() {
